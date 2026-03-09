@@ -1,336 +1,180 @@
--- ============================================================
--- JetBlue / Spirit Airlines Merger Antitrust Analysis
--- Data Source: BTS DB1B Origin & Destination Survey
---              Market-level files, 2021-Q3 through 2022-Q2
--- Carrier Codes: JetBlue = 'B6', Spirit = 'NK'
--- HHI thresholds (DOJ/FTC Horizontal Merger Guidelines):
---   < 1,500           Unconcentrated
---   1,500 – 2,500     Moderately Concentrated
---   > 2,500           Highly Concentrated (presumptively illegal)
---   delta > 200 AND post > 2,500 → merger presumptively anticompetitive
--- ============================================================
+/* ============================================================
+	QUESTION 1
+	In how many Origin & Destination markets did JetBlue (B6) and Spirit (NK)
+	compete head-to-head from 2021-Q3 through 2022-Q2?
+   ============================================================ */
 
+-- Unique routes flown by JetBlue
+CREATE OR REPLACE VIEW jetblue_unique AS
+SELECT origin, dest, unique_carrier_name AS airline
+FROM domestic_market
+WHERE ((year = 2021 AND (quarter = 3 OR quarter = 4)) OR (year = 2022 AND (quarter = 1 OR quarter = 2)))
+    AND class = 'F' AND unique_carrier_name = 'JetBlue Airways'
+GROUP BY origin, dest, unique_carrier_name;
 
--- ============================================================
--- PART 0: Create and Populate the Flight Traffic Table
--- ============================================================
+-- Unique routes flown by Spirit
+CREATE OR REPLACE VIEW spirit_unique AS
+SELECT origin, dest, unique_carrier_name AS airline
+FROM domestic_market
+WHERE ((year = 2021 AND (quarter = 3 OR quarter = 4)) OR (year = 2022 AND (quarter = 1 OR quarter = 2)))
+    AND class = 'F' AND unique_carrier_name = 'Spirit Air Lines'
+GROUP BY origin, dest, unique_carrier_name;
 
-DROP TABLE IF EXISTS flight_traffic;
+-- Routes where both carriers operated
+CREATE OR REPLACE VIEW jetblue_and_spirit_routes AS
+SELECT
+    j.origin AS origin,
+    j.dest AS dest,
+    j.airline AS jetblue_airline,
+    s.airline AS spirit_airline
+FROM jetblue_unique AS j
+INNER JOIN spirit_unique AS s
+    USING (origin, dest);
 
-CREATE TABLE flight_traffic (
-    Year       SMALLINT   NOT NULL,
-    Quarter    TINYINT    NOT NULL,
-    Origin     CHAR(3)    NOT NULL,   -- 3-letter IATA airport code
-    Dest       CHAR(3)    NOT NULL,   -- 3-letter IATA airport code
-    Carrier    VARCHAR(2) NOT NULL,   -- Reporting carrier (RPCarrier in DB1B)
-    Passengers INT        NOT NULL DEFAULT 0,
-    INDEX idx_period  (Year, Quarter),
-    INDEX idx_od      (Origin, Dest),
-    INDEX idx_carrier (Carrier)
-);
-
--- ---------------------------------------------------------------
--- DATA LOADING INSTRUCTIONS
---
--- 1. Go to: https://www.transtats.bts.gov/Tables.asp?QO_VQ=EFD
---    (BTS "Origin and Destination Survey" — DB1B Market table)
---
--- 2. Download and unzip the CSV files for:
---      2021 Q3, 2021 Q4, 2022 Q1, 2022 Q2
---
--- 3. The DB1B Market CSV has many columns. We only need:
---      Year, Quarter, Origin, Dest, RPCarrier, Passengers
---
--- 4. Run LOAD DATA INFILE once per quarter (update path each time).
---    The column list below maps all CSV columns in order;
---    unwanted columns are loaded into throwaway variables (@var).
---
--- NOTE: If using MySQL Workbench, enable local infile:
---   SET GLOBAL local_infile = 1;
---   and connect with --local-infile=1
--- ---------------------------------------------------------------
-
-/*
-LOAD DATA LOCAL INFILE '/path/to/Origin_and_Destination_Survey_DB1BMarket_2021_3.csv'
-INTO TABLE flight_traffic
-FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-LINES TERMINATED BY '\r\n'
-IGNORE 1 ROWS
-(
-    @ItinID, @MktID, @SeqNum, @Coupons,
-    Year, Quarter,
-    Origin, @OriginAirportID, @OriginCityMarketID,
-    @OriginCountry, @OriginStateFips, @OriginState, @OriginStateName, @OriginWac,
-    Dest, @DestAirportID, @DestCityMarketID,
-    @DestCountry, @DestStateFips, @DestState, @DestStateName, @DestWac,
-    @AirportGroup, @WacGroup,
-    @TkCarrierChange, @TkCarrierGroup, @OpCarrierChange, @OpCarrierGroup,
-    Carrier,      -- RPCarrier column
-    @TkCarrier, @OpCarrier,
-    @BulkFare, Passengers,
-    @MktFare, @MktDistance, @MktDistanceGroup, @MktMilesFlown,
-    @NonStopMiles, @ItinGeoType, @MktGeoType
-);
--- Repeat for 2021_4, 2022_1, and 2022_2 (update file path each time)
-*/
-
-
--- ============================================================
--- QUESTION 1
--- In how many O&D markets did JetBlue (B6) and Spirit (NK)
--- compete head-to-head from 2021-Q3 through 2022-Q2?
---
--- Market = normalized airport pair (LEAST/GREATEST so that
--- LAX->JFK and JFK->LAX are treated as the same market).
--- ============================================================
-
-WITH carriers_by_market AS (
-    SELECT
-        LEAST(Origin, Dest)    AS mkt_a,
-        GREATEST(Origin, Dest) AS mkt_b,
-        Carrier
-    FROM flight_traffic
-    WHERE ((Year = 2021 AND Quarter IN (3, 4))
-        OR (Year = 2022 AND Quarter IN (1, 2)))
-      AND Passengers > 0
-    GROUP BY mkt_a, mkt_b, Carrier
-)
 SELECT COUNT(*) AS head_to_head_markets
-FROM carriers_by_market b6
-JOIN carriers_by_market nk
-    ON  b6.mkt_a = nk.mkt_a
-    AND b6.mkt_b = nk.mkt_b
-WHERE b6.Carrier = 'B6'
-  AND nk.Carrier = 'NK';
+FROM jetblue_and_spirit_routes;
+-- Answer: 188
+-- Driver: Hazel and Andrew
 
+/* ============================================================
+	QUESTION 2
+	Pre-merger HHI for overlapping (head-to-head) markets.
+	How many had HHI > 2,500, and what % is that?
 
--- ============================================================
--- QUESTION 2
--- Pre-merger HHI for overlapping (head-to-head) markets.
--- How many markets had HHI > 2,500, and what % is that?
---
--- HHI = SUM(market_share_i ^ 2), where share is 0–100 scale.
--- Range: 0 (perfect competition) → 10,000 (pure monopoly).
--- ============================================================
+	HHI = SUM(market_share_i ^ 2), share on 0–100 scale.
+	Range: 0 (perfect competition) → 10,000 (monopoly).
+   ============================================================ */
 
-WITH
--- Step 1: Aggregate passengers by normalized market and carrier
-pax_by_market AS (
-    SELECT
-        LEAST(Origin, Dest)    AS mkt_a,
-        GREATEST(Origin, Dest) AS mkt_b,
-        Carrier,
-        SUM(Passengers)        AS pax
-    FROM flight_traffic
-    WHERE ((Year = 2021 AND Quarter IN (3, 4))
-        OR (Year = 2022 AND Quarter IN (1, 2)))
-      AND Passengers > 0
-    GROUP BY mkt_a, mkt_b, Carrier
-),
+-- Total passengers per carrier per route
+CREATE OR REPLACE VIEW tot_passengers_per_route AS
+SELECT
+    origin,
+    dest,
+    unique_carrier_name AS airline,
+    SUM(passengers) AS tot_passengers
+FROM domestic_market
+WHERE class = 'F'
+    AND ((year = 2021 AND (quarter = 3 OR quarter = 4)) OR (year = 2022 AND (quarter = 1 OR quarter = 2)))
+GROUP BY origin, dest, unique_carrier_name;
 
--- Step 2: Identify markets served by BOTH JetBlue and Spirit
-overlapping AS (
-    SELECT DISTINCT b6.mkt_a, b6.mkt_b
-    FROM   pax_by_market b6
-    JOIN   pax_by_market nk
-        ON  b6.mkt_a = nk.mkt_a
-        AND b6.mkt_b = nk.mkt_b
-    WHERE  b6.Carrier = 'B6'
-      AND  nk.Carrier = 'NK'
-),
+-- Total passengers across all carriers per route (window function)
+CREATE OR REPLACE VIEW tot_passengers_per_market AS
+SELECT
+    *,
+    SUM(tot_passengers) OVER (PARTITION BY origin, dest) AS passengers_per_route
+FROM tot_passengers_per_route;
+-- Driver: Sarahi
 
--- Step 3: Total passengers per overlapping market (all carriers)
-market_totals AS (
-    SELECT p.mkt_a, p.mkt_b, SUM(p.pax) AS total_pax
-    FROM   pax_by_market p
-    JOIN   overlapping   o USING (mkt_a, mkt_b)
-    GROUP BY p.mkt_a, p.mkt_b
-),
+-- Market share per carrier per route
+CREATE OR REPLACE VIEW market_share AS
+SELECT *,
+    (100 * tot_passengers / passengers_per_route) AS market_share
+FROM tot_passengers_per_market;
 
--- Step 4: Each carrier's market share (%) within each overlapping market
-market_shares AS (
-    SELECT
-        p.mkt_a,
-        p.mkt_b,
-        p.Carrier,
-        (p.pax / t.total_pax * 100.0) AS share_pct
-    FROM   pax_by_market p
-    JOIN   market_totals t USING (mkt_a, mkt_b)
-),
+-- Pre-merger HHI per route
+CREATE OR REPLACE VIEW route_hhi AS
+SELECT
+    origin,
+    dest,
+    SUM(market_share * market_share) AS HHI
+FROM market_share
+GROUP BY origin, dest
+HAVING HHI IS NOT NULL;
 
--- Step 5: HHI per market = SUM(share_pct²)
-pre_merger_hhi AS (
-    SELECT
-        mkt_a,
-        mkt_b,
-        ROUND(SUM(share_pct * share_pct), 2) AS HHI
-    FROM   market_shares
-    GROUP BY mkt_a, mkt_b
-)
+-- HHI restricted to overlapping JetBlue/Spirit routes
+CREATE OR REPLACE VIEW competing_route_hhi AS
+SELECT
+    j.origin AS origin,
+    j.dest AS dest,
+    ROUND(h.HHI) AS hhi
+FROM jetblue_and_spirit_routes AS j
+LEFT JOIN route_hhi AS h
+    ON h.origin = j.origin AND h.dest = j.dest
+ORDER BY hhi DESC;
+-- Driver: Hazel
 
 SELECT
-    COUNT(*)                                                          AS total_overlapping_markets,
-    SUM(CASE WHEN HHI > 2500 THEN 1 ELSE 0 END)                     AS markets_above_2500,
+    COUNT(*) AS num_markets,
+    COUNT(CASE WHEN hhi > 2500 THEN 1 END) AS num_markets_above_2500,
+    ROUND(100 * SUM(CASE WHEN hhi > 2500 THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct_above_2500
+FROM competing_route_hhi;
+-- Answer: Total Markets 188, Markets Above 2500 181, Percentage 96.28%
+-- Driver: Brayden
+
+/* ============================================================
+	QUESTION 3
+	Post-merger (hypothetical) HHI if the merger were approved.
+	How many markets would be presumptively illegal?
+
+	Simulation: Spirit passengers folded into JetBlue as one entity.
+	Presumptively illegal = post HHI > 2,500 AND delta > 200.
+   ============================================================ */
+
+-- Combine Spirit passengers into JetBlue on overlapping routes
+CREATE OR REPLACE VIEW merged_passengers AS
+SELECT
+    origin,
+    dest,
+    CASE WHEN airline = 'Spirit Air Lines' THEN 'JetBlue Airways' ELSE airline END AS merged_airline,
+    SUM(tot_passengers) AS tot_passengers
+FROM tot_passengers_per_route
+GROUP BY origin, dest, merged_airline;
+
+-- Total passengers per route post-merger
+CREATE OR REPLACE VIEW merged_passengers_per_market AS
+SELECT
+    *,
+    SUM(tot_passengers) OVER (PARTITION BY origin, dest) AS passengers_per_route
+FROM merged_passengers;
+
+-- Post-merger market share per carrier per route
+CREATE OR REPLACE VIEW merged_market_share AS
+SELECT *,
+    (100 * tot_passengers / passengers_per_route) AS market_share
+FROM merged_passengers_per_market;
+
+-- Post-merger HHI per route
+CREATE OR REPLACE VIEW merged_route_hhi AS
+SELECT
+    origin,
+    dest,
+    SUM(market_share * market_share) AS post_HHI
+FROM merged_market_share
+GROUP BY origin, dest
+HAVING post_HHI IS NOT NULL;
+
+-- Compare pre- and post-merger HHI on overlapping routes
+CREATE OR REPLACE VIEW hhi_comparison AS
+SELECT
+    c.origin,
+    c.dest,
+    c.hhi AS pre_HHI,
+    ROUND(m.post_HHI) AS post_HHI,
+    ROUND(m.post_HHI) - c.hhi AS delta_HHI
+FROM competing_route_hhi AS c
+LEFT JOIN merged_route_hhi AS m
+    ON m.origin = c.origin AND m.dest = c.dest;
+
+SELECT
+    COUNT(*) AS total_overlapping_markets,
+    ROUND(AVG(pre_HHI), 2) AS avg_pre_merger_HHI,
+    ROUND(AVG(post_HHI), 2) AS avg_post_merger_HHI,
+    ROUND(AVG(delta_HHI), 2) AS avg_delta_HHI,
+    SUM(CASE WHEN post_HHI > 2500 AND delta_HHI > 200 THEN 1 END) AS presumptively_illegal,
     ROUND(
-        100.0 * SUM(CASE WHEN HHI > 2500 THEN 1 ELSE 0 END) / COUNT(*),
-        1)                                                            AS pct_above_2500,
-    ROUND(AVG(HHI), 2)                                               AS avg_HHI,
-    ROUND(MIN(HHI), 2)                                               AS min_HHI,
-    ROUND(MAX(HHI), 2)                                               AS max_HHI
-FROM pre_merger_hhi;
-
--- Optional: uncomment to see each overlapping market with its HHI
-/*
-... (same CTEs as above) ...
-SELECT
-    mkt_a, mkt_b,
-    HHI,
-    CASE
-        WHEN HHI > 2500 THEN 'Highly Concentrated'
-        WHEN HHI > 1500 THEN 'Moderately Concentrated'
-        ELSE 'Unconcentrated'
-    END AS concentration_level
-FROM pre_merger_hhi
-ORDER BY HHI DESC;
-*/
-
-
--- ============================================================
--- QUESTION 3
--- Post-merger (hypothetical) HHI if the merger were approved.
--- How many overlapping markets would be presumptively illegal?
---
--- Simulation: NK passengers are folded into B6 (one combined carrier).
--- Presumptively illegal = post-merger HHI > 2,500 AND delta HHI > 200.
--- ============================================================
-
-WITH
-pax_by_market AS (
-    SELECT
-        LEAST(Origin, Dest)    AS mkt_a,
-        GREATEST(Origin, Dest) AS mkt_b,
-        Carrier,
-        SUM(Passengers)        AS pax
-    FROM flight_traffic
-    WHERE ((Year = 2021 AND Quarter IN (3, 4))
-        OR (Year = 2022 AND Quarter IN (1, 2)))
-      AND Passengers > 0
-    GROUP BY mkt_a, mkt_b, Carrier
-),
-overlapping AS (
-    SELECT DISTINCT b6.mkt_a, b6.mkt_b
-    FROM   pax_by_market b6
-    JOIN   pax_by_market nk
-        ON  b6.mkt_a = nk.mkt_a
-        AND b6.mkt_b = nk.mkt_b
-    WHERE  b6.Carrier = 'B6'
-      AND  nk.Carrier = 'NK'
-),
-
--- --- PRE-MERGER HHI ---
-pre_totals AS (
-    SELECT p.mkt_a, p.mkt_b, SUM(p.pax) AS total_pax
-    FROM   pax_by_market p
-    JOIN   overlapping   o USING (mkt_a, mkt_b)
-    GROUP BY p.mkt_a, p.mkt_b
-),
-pre_shares AS (
-    SELECT p.mkt_a, p.mkt_b,
-           (p.pax / t.total_pax * 100.0) AS share_pct
-    FROM   pax_by_market p
-    JOIN   pre_totals    t USING (mkt_a, mkt_b)
-),
-pre_hhi AS (
-    SELECT mkt_a, mkt_b,
-           ROUND(SUM(share_pct * share_pct), 2) AS pre_HHI
-    FROM   pre_shares
-    GROUP BY mkt_a, mkt_b
-),
-
--- --- POST-MERGER HHI (NK merged into B6) ---
-merged_pax AS (
-    SELECT
-        mkt_a,
-        mkt_b,
-        CASE WHEN Carrier = 'NK' THEN 'B6' ELSE Carrier END AS merged_carrier,
-        SUM(pax)                                             AS pax
-    FROM   pax_by_market
-    GROUP BY mkt_a, mkt_b, merged_carrier
-),
-post_totals AS (
-    SELECT p.mkt_a, p.mkt_b, SUM(p.pax) AS total_pax
-    FROM   merged_pax  p
-    JOIN   overlapping o USING (mkt_a, mkt_b)
-    GROUP BY p.mkt_a, p.mkt_b
-),
-post_shares AS (
-    SELECT p.mkt_a, p.mkt_b,
-           (p.pax / t.total_pax * 100.0) AS share_pct
-    FROM   merged_pax  p
-    JOIN   post_totals t USING (mkt_a, mkt_b)
-),
-post_hhi AS (
-    SELECT mkt_a, mkt_b,
-           ROUND(SUM(share_pct * share_pct), 2) AS post_HHI
-    FROM   post_shares
-    GROUP BY mkt_a, mkt_b
-),
-
--- --- COMBINE PRE AND POST ---
-hhi_comparison AS (
-    SELECT
-        pre.mkt_a,
-        pre.mkt_b,
-        pre.pre_HHI,
-        post.post_HHI,
-        ROUND(post.post_HHI - pre.pre_HHI, 2) AS delta_HHI
-    FROM pre_hhi  pre
-    JOIN post_hhi post USING (mkt_a, mkt_b)
-)
-
-SELECT
-    COUNT(*)                                                               AS total_overlapping_markets,
-    ROUND(AVG(pre_HHI),   2)                                              AS avg_pre_merger_HHI,
-    ROUND(AVG(post_HHI),  2)                                              AS avg_post_merger_HHI,
-    ROUND(AVG(delta_HHI), 2)                                              AS avg_delta_HHI,
-    -- Presumptively anticompetitive: post HHI > 2,500 AND delta > 200
-    SUM(CASE WHEN post_HHI > 2500 AND delta_HHI > 200 THEN 1 ELSE 0 END) AS presumptively_illegal,
-    ROUND(
-        100.0 * SUM(CASE WHEN post_HHI > 2500 AND delta_HHI > 200 THEN 1 ELSE 0 END) / COUNT(*),
-        1)                                                                 AS pct_presumptively_illegal
+        100.0 * SUM(CASE WHEN post_HHI > 2500 AND delta_HHI > 200 THEN 1 END)
+        / COUNT(*), 2) AS pct_presumptively_illegal
 FROM hhi_comparison;
+-- Answer: Total Overlapping Markets: 188, Avg Pre-Merger HHI: 4716.13,
+--         Avg Post-Merger HHI: 5615.82, Avg Delta HHI: 899.70,
+--         Presumptively Illegal Markets: 90, Pct Presumptively Illegal: 47.87%
+-- Driver: Brayden
 
-
--- ============================================================
--- QUESTION 4
--- Given the analysis, why did JetBlue continue to pursue
--- the merger despite antitrust headwinds?
--- ============================================================
-/*
-Despite the clear antitrust risks revealed by the HHI analysis, JetBlue had
-compelling strategic reasons to pursue the merger aggressively.
-
-JetBlue occupied an awkward competitive middle-ground: too large to match
-Frontier or Spirit on pure price, and too small to compete on scale with the
-Big Four (American, Delta, United, Southwest). Acquiring Spirit was the fastest
-available path to escape that trap — it would have instantly doubled JetBlue's
-fleet, expanded its route network into markets it could not enter organically,
-and given it the purchasing scale needed to negotiate better terms with aircraft
-manufacturers, airports, and fuel suppliers.
-
-JetBlue also likely miscalculated the regulatory environment. Having weathered
-earlier DOJ scrutiny (including its Northeast Alliance with American Airlines),
-management may have believed that strategic divestitures — airport slot transfers,
-route concessions to Allegiant and others — could neutralize antitrust concerns.
-They framed the deal as net pro-competitive, arguing that a larger JetBlue would
-extend the "JetBlue Effect" (lower fares, higher service quality) into markets
-previously dominated by legacy carriers. That narrative underestimated the DOJ's
-singular focus on preserving Spirit's unique role as an ultra-low-cost disruptor.
-
-Finally, the deal's economics rewarded persistence: JetBlue had negotiated a
-$70M reverse breakup fee payable to Spirit if the merger was blocked — a modest
-number relative to the transformational upside if approved. Walking away early
-would have meant absorbing reputational and strategic losses without any benefit.
-So JetBlue bet that a federal judge might see things differently than the DOJ,
-a gamble that ultimately did not pay off.
+/* ============================================================
+	QUESTION 4
+	Given the analysis, why did JetBlue continue to pursue
+	the merger despite antitrust headwinds?
+   ============================================================ 
+   
+   Answer
 */
