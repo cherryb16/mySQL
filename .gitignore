@@ -1,0 +1,4 @@
+# MySQL dumps
+dumps/
+*.dump
+*.dmp
