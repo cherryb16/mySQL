@@ -4,16 +4,6 @@
    Transportation (the 'DOT'), as of September 30, 2019, Southwest was the
    largest domestic air carrier in the United States, as measured by the
    number of domestic originating passengers boarded."
-
-   Approach:
-   The BTS Domestic Market table (T-100 data) is the same DOT dataset
-   Southwest references. Each row represents a directional origin-destination
-   market; the `passengers` column counts passengers who boarded at the origin.
-   Summing passengers by carrier gives total domestic originating passengers.
-
-   To match the "as of September 30, 2019" reference, we use year = 2019
-   and quarter IN (1, 2, 3) — i.e., January through September.
-   Filter: class = 'F' (scheduled passenger service only).
    ============================================================ */
 
 SELECT
