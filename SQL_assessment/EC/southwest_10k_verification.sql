@@ -46,5 +46,5 @@ LIMIT 10;
 
    INTERPRETATION:
    Southwest (WN) ranks #1 with 118.2M originating passengers through Q3 2019,
-   ahead of Delta (102.3M) by ~16M passengers. The 10-K claim is confirmed.
+   slightly ahead of Delta (102.3M) by ~16M passengers. The 10-K claim is confirmed.
    ============================================================ */
