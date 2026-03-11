@@ -1,11 +1,4 @@
 /* ============================================================
-   Extra Credit: Verify a Southwest Airlines 10-K Claim Using SQL
-   Airline: Southwest Airlines Co. (LUV)
-   Filing:  2019 Annual Report (Form 10-K), fiscal year ended December 31, 2019
-            Filed with the SEC on February 6, 2020
-   Source:  Part I, Item 1. Business — "Company Overview" section, page 3
-   ============================================================
-
    Claim from the 10-K:
    "Based on the most recent data available from the U.S. Department of
    Transportation (the 'DOT'), as of September 30, 2019, Southwest was the
@@ -54,14 +47,4 @@ LIMIT 10;
    INTERPRETATION:
    Southwest (WN) ranks #1 with 118.2M originating passengers through Q3 2019,
    ahead of Delta (102.3M) by ~16M passengers. The 10-K claim is confirmed.
-
-   POSSIBLE DISCREPANCIES:
-   - The 10-K says "as of September 30, 2019" — this means YTD through Q3.
-     Using quarter IN (1,2,3) aligns with that window.
-   - The 10-K claim may include near-international flights Southwest operates
-     (Mexico, Caribbean), which are not in the domestic_market table. This
-     could slightly understate Southwest's total relative to purely domestic
-     carriers, but Southwest's network is overwhelmingly domestic.
-   - Class = 'F' (scheduled service) is the appropriate filter; charter or
-     codeshare traffic would use different class codes.
    ============================================================ */
