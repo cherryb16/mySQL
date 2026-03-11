@@ -24,9 +24,9 @@
    ============================================================ */
 
 SELECT
-    unique_carrier                          AS carrier_code,
-    unique_carrier_name                     AS carrier_name,
-    SUM(passengers)                         AS originating_passengers,
+    unique_carrier AS carrier_code,
+    unique_carrier_name AS carrier_name,
+    SUM(passengers) AS originating_passengers,
     RANK() OVER (ORDER BY SUM(passengers) DESC) AS passenger_rank
 FROM bts.domestic_market
 WHERE year  = 2019
