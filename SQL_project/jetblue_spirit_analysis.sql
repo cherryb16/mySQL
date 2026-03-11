@@ -177,4 +177,16 @@ FROM hhi_comparison;
    ============================================================ 
    
    Answer
+   JetBlue likely kept pursuing Spirit for strategic reasons that went beyond 
+   the near-term legal risk. The merger offered immediate scale, including more 
+   aircraft, crews, and route coverage, which could help JetBlue spread fixed 
+   costs and compete more effectively against the Big 4 legacy carriers. It also 
+   had a defensive logic: if Frontier acquired Spirit instead, a major low-cost 
+   rival could become even stronger in JetBlue’s core leisure markets. JetBlue’s 
+   public case was that expanding JetBlue service would produce broader fare 
+   discipline and better consumer outcomes, even if Spirit as a standalone 
+   ultra-low-cost carrier disappeared. Regulators, however, focused on that 
+   exact tradeoff, since removing Spirit could reduce the very lowest fare 
+   options in many overlapping markets and increase concentration, which is 
+   consistent with the HHI results showing substantial antitrust concern.
 */
